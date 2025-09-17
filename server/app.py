@@ -1,55 +1,60 @@
-#!/usr/bin/env python3
-
-from flask import Flask, jsonify, request, make_response
-from flask_migrate import Migrate
-from flask_restful import Api, Resource
-
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 from models import db, Plant
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///plants.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.json.compact = False
 
-migrate = Migrate(app, db)
 db.init_app(app)
+CORS(app)
 
-api = Api(app)
+# ======== EXISTING ROUTES (probably already there) ========
+@app.route('/')
+def index():
+    return 'Plant Store API'
 
+@app.route('/plants', methods=['GET'])
+def get_plants():
+    plants = Plant.query.all()
+    return jsonify([plant.to_dict() for plant in plants])
 
-class Plants(Resource):
+@app.route('/plants/<int:id>', methods=['GET'])
+def get_plant(id):
+    plant = Plant.query.get(id)
+    if plant:
+        return jsonify(plant.to_dict())
+    return jsonify({'error': 'Plant not found'}), 404
 
-    def get(self):
-        plants = [plant.to_dict() for plant in Plant.query.all()]
-        return make_response(jsonify(plants), 200)
+# ======== YOUR NEW ROUTES GO HERE ========
 
-    def post(self):
-        data = request.get_json()
+# UPDATE ROUTE - PATCH /plants/:id
+@app.route('/plants/<int:id>', methods=['PATCH'])  # 👈 This goes here
+def update_plant(id):
+    plant = Plant.query.get(id)
+    if not plant:
+        return jsonify({'error': 'Plant not found'}), 404
+    
+    data = request.get_json()
+    
+    # Update only the fields provided
+    if 'is_in_stock' in data:
+        plant.is_in_stock = data['is_in_stock']
+    
+    db.session.commit()
+    return jsonify(plant.to_dict()), 200
 
-        new_plant = Plant(
-            name=data['name'],
-            image=data['image'],
-            price=data['price'],
-        )
+# DELETE ROUTE - DELETE /plants/:id  
+@app.route('/plants/<int:id>', methods=['DELETE'])  # 👈 This goes here
+def delete_plant(id):
+    plant = Plant.query.get(id)
+    if not plant:
+        return jsonify({'error': 'Plant not found'}), 404
+    
+    db.session.delete(plant)
+    db.session.commit()
+    return '', 204
 
-        db.session.add(new_plant)
-        db.session.commit()
-
-        return make_response(new_plant.to_dict(), 201)
-
-
-api.add_resource(Plants, '/plants')
-
-
-class PlantByID(Resource):
-
-    def get(self, id):
-        plant = Plant.query.filter_by(id=id).first().to_dict()
-        return make_response(jsonify(plant), 200)
-
-
-api.add_resource(PlantByID, '/plants/<int:id>')
-
-
+# ======== END OF ROUTES ========
 if __name__ == '__main__':
     app.run(port=5555, debug=True)
